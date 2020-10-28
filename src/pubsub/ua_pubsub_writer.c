@@ -202,6 +202,16 @@ UA_Server_addWriterGroup(UA_Server *server, const UA_NodeId connection,
         tmpWriterGroupConfig.messageSettings.encoding = UA_EXTENSIONOBJECT_DECODED;
     }
     newWriterGroup->config = tmpWriterGroupConfig;
+    if((newWriterGroup->config.baseTime > 0.0) && (newWriterGroup->config.baseTime > UA_DateTime_now())) {
+        newWriterGroup->callbackTime = newWriterGroup->config.baseTime;
+    } else {
+        if(newWriterGroup->config.baseTime > 0.0) {
+            UA_LOG_INFO(&server->config.logger, UA_LOGCATEGORY_SERVER,
+                        "Past base time configured. Re-configuring new base time considering the cycle time interval");
+            /*TODO: Calculation of nextTime with respect to baseTime */
+        }
+    }
+
     LIST_INSERT_HEAD(&currentConnectionContext->writerGroups, newWriterGroup, listEntry);
     currentConnectionContext->writerGroupsSize++;
 #ifdef UA_ENABLE_PUBSUB_INFORMATIONMODEL
@@ -2083,17 +2093,34 @@ UA_WriterGroup_publishCallback(UA_Server *server, UA_WriterGroup *writerGroup) {
         return;
     }
 
+    if(writerGroup->config.encodingMimeType == UA_PUBSUB_ENCODING_UADP){
+        UA_UadpWriterGroupMessageDataType *wgm = (UA_UadpWriterGroupMessageDataType *) writerGroup->config.messageSettings.content.decoded.data;
+        /* Check the current time with the first value of publishingOffset array */
+        if((writerGroup->callbackTime + (UA_DateTime)((*wgm->publishingOffset) * UA_DATETIME_MSEC)) < UA_DateTime_now())
+            UA_LOG_WARNING(&server->config.logger, UA_LOGCATEGORY_SERVER,
+                           "Delayed publish. Publish may fail, modify cycletime and PublishingOffset configuration. Use custom callback implementation for better accuracy");
+    }
+
     if(writerGroup->config.rtLevel == UA_PUBSUB_RT_FIXED_SIZE) {
+        UA_UadpWriterGroupMessageDataType *wgm = (UA_UadpWriterGroupMessageDataType *) writerGroup->config.messageSettings.content.decoded.data;
+        if(wgm->publishingOffsetSize > 1)
+            UA_LOG_WARNING(&server->config.logger, UA_LOGCATEGORY_SERVER,
+                           "PublishingOffset array not supported in RT pubsub path. Initial publishingOffset value taken");
+
+        UA_DateTime publishingTime = writerGroup->callbackTime + (UA_DateTime)((*wgm->publishingOffset) * UA_DATETIME_MSEC);
+        printf("pub %ld", publishingTime);
         UA_StatusCode res =
             sendBufferedNetworkMessage(server, connection, &writerGroup->bufferedMessage,
                                        &writerGroup->config.transportSettings);
         if(res == UA_STATUSCODE_GOOD) {
             writerGroup->sequenceNumber++;
+            writerGroup->callbackTime = writerGroup->callbackTime + (UA_DateTime)(writerGroup->config.publishingInterval * UA_DATETIME_MSEC);
         } else {
             UA_LOG_ERROR(&server->config.logger, UA_LOGCATEGORY_SERVER,
-                       "Publish failed. RT fixed size. sendBufferedNetworkMessage failed");
+                         "Publish failed. RT fixed size. sendBufferedNetworkMessage failed");
             UA_WriterGroup_setPubSubState(server, UA_PUBSUBSTATE_ERROR, writerGroup);
         }
+
         return;
     }
 
@@ -2139,6 +2166,9 @@ UA_WriterGroup_publishCallback(UA_Server *server, UA_WriterGroup *writerGroup) {
             * dedicated NM as well. */
             if(pds->promotedFieldsCount > 0 || maxDSM == 1) {
                 if(writerGroup->config.encodingMimeType == UA_PUBSUB_ENCODING_UADP){
+                    UA_UadpWriterGroupMessageDataType *wgm = (UA_UadpWriterGroupMessageDataType *) writerGroup->config.messageSettings.content.decoded.data;
+                    UA_DateTime publishingTime = writerGroup->callbackTime  + (UA_DateTime)(wgm->publishingOffset[dsmCount] * UA_DATETIME_MSEC);
+                            printf("pub %ld", publishingTime);
                     res = sendNetworkMessage(connection, writerGroup, &dsmStore[dsmCount],
                                             &dsw->config.dataSetWriterId, 1,
                                             &writerGroup->config.messageSettings,
@@ -2178,6 +2208,10 @@ UA_WriterGroup_publishCallback(UA_Server *server, UA_WriterGroup *writerGroup) {
             nmDsmCount = (UA_Byte)dsmCount % maxDSM;
         UA_StatusCode res3 = UA_STATUSCODE_GOOD;
         if(writerGroup->config.encodingMimeType == UA_PUBSUB_ENCODING_UADP){
+            UA_UadpWriterGroupMessageDataType *wgm = (UA_UadpWriterGroupMessageDataType *) writerGroup->config.messageSettings.content.decoded.data;
+            /* TODO: PublishingOffset calculation of publish time */
+            UA_DateTime publishingTime = writerGroup->callbackTime  + (UA_DateTime)(wgm->publishingOffset[i * maxDSM] * UA_DATETIME_MSEC);
+                    printf("pub %ld", publishingTime);
             res3 = sendNetworkMessage(connection, writerGroup, &dsmStore[i * maxDSM],
                                       &dsWriterIds[i * maxDSM], nmDsmCount,
                                       &writerGroup->config.messageSettings,
@@ -2206,6 +2240,7 @@ UA_WriterGroup_publishCallback(UA_Server *server, UA_WriterGroup *writerGroup) {
         writerGroup->sequenceNumber++;
     }
 
+    writerGroup->callbackTime = writerGroup->callbackTime + (UA_DateTime)(writerGroup->config.publishingInterval * UA_DATETIME_MSEC);
     /* Clean up DSM */
     for(size_t i = 0; i < dsmCount; i++)
         UA_DataSetMessage_free(&dsmStore[i]);
@@ -2220,12 +2255,12 @@ UA_WriterGroup_addPublishCallback(UA_Server *server, UA_WriterGroup *writerGroup
         retval |= writerGroup->config.pubsubManagerCallback.addCustomCallback(server, writerGroup->identifier,
                                                                               (UA_ServerCallback) UA_WriterGroup_publishCallback,
                                                                               writerGroup, writerGroup->config.publishingInterval,
-                                                                              &writerGroup->publishCallbackId);
+                                                                              writerGroup->callbackTime, &writerGroup->publishCallbackId);
     else
         retval |= UA_PubSubManager_addRepeatedCallback(server,
                                                        (UA_ServerCallback) UA_WriterGroup_publishCallback,
                                                        writerGroup, writerGroup->config.publishingInterval,
-                                                       &writerGroup->publishCallbackId);
+                                                       writerGroup->callbackTime, &writerGroup->publishCallbackId);
 
     if(retval == UA_STATUSCODE_GOOD)
         writerGroup->publishCallbackIsRegistered = true;

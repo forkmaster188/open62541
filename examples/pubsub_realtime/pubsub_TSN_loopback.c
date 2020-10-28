@@ -235,7 +235,7 @@ static void nanoSecondFieldConversion(struct timespec *timeSpecValue) {
 static UA_StatusCode
 addPubSubApplicationCallback(UA_Server *server, UA_NodeId identifier,
                              UA_ServerCallback callback,
-                             void *data, UA_Double interval_ms, UA_UInt64 *callbackId) {
+                             void *data, UA_Double interval_ms, UA_DateTime callbackTime, UA_UInt64 *callbackId) {
     /* Initialize arguments required for the thread to run */
     threadArg *threadArguments = (threadArg *) UA_malloc(sizeof(threadArg));
 

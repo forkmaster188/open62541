@@ -143,6 +143,8 @@ struct UA_WriterGroup{
     UA_PubSubState state;
     UA_NetworkMessageOffsetBuffer bufferedMessage;
     UA_UInt16 sequenceNumber; /* Increased after every succressuly sent message */
+    /* non-std */
+    UA_DateTime callbackTime;
     /* This flag is 'read only' and is set internally based on the PubSub state. */
     UA_Boolean configurationFrozen;
 };
@@ -247,6 +249,8 @@ struct UA_ReaderGroup {
     UA_UInt64 subscribeCallbackId;
     UA_Boolean subscribeCallbackIsRegistered;
     UA_PubSubState state;
+    /* non-std */
+    UA_DateTime callbackTime;
     /* This flag is 'read only' and is set internally based on the PubSub state. */
     UA_Boolean configurationFrozen;
 };

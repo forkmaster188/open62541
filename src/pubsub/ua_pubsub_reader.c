@@ -835,7 +835,6 @@ UA_DataSetReader *UA_ReaderGroup_findDSRbyId(UA_Server *server, UA_NodeId identi
 /* This callback triggers the collection and reception of NetworkMessages and the
  * contained DataSetMessages. */
 void UA_ReaderGroup_subscribeCallback(UA_Server *server, UA_ReaderGroup *readerGroup) {
-
     UA_LOG_DEBUG(&server->config.logger, UA_LOGCATEGORY_SERVER, "PubSub subscribe callback");
 
     if(!readerGroup) {
@@ -938,12 +937,14 @@ UA_ReaderGroup_addSubscribeCallback(UA_Server *server, UA_ReaderGroup *readerGro
                                                                               (UA_ServerCallback) UA_ReaderGroup_subscribeCallback,
                                                                               readerGroup,
                                                                               readerGroup->config.subscribingInterval,
+                                                                              readerGroup->callbackTime,
                                                                               &readerGroup->subscribeCallbackId);
     else
         retval |= UA_PubSubManager_addRepeatedCallback(server,
                                                        (UA_ServerCallback) UA_ReaderGroup_subscribeCallback,
                                                        readerGroup,
                                                        readerGroup->config.subscribingInterval,
+                                                       readerGroup->callbackTime,
                                                        &readerGroup->subscribeCallbackId);
 
     if(retval == UA_STATUSCODE_GOOD)

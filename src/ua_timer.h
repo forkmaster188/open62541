@@ -74,7 +74,7 @@ UA_Timer_addTimerEntry(UA_Timer *t, UA_TimerEntry *te, UA_UInt64 *callbackId);
 UA_StatusCode
 UA_Timer_addRepeatedCallback(UA_Timer *t, UA_ApplicationCallback callback,
                              void *application, void *data, UA_Double interval_ms,
-                             UA_UInt64 *callbackId);
+                             UA_DateTime baseTime, UA_UInt64 *callbackId);
 
 UA_StatusCode
 UA_Timer_changeRepeatedCallbackInterval(UA_Timer *t, UA_UInt64 callbackId,

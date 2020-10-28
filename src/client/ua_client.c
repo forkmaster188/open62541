@@ -577,7 +577,7 @@ UA_StatusCode
 UA_Client_addRepeatedCallback(UA_Client *client, UA_ClientCallback callback,
                               void *data, UA_Double interval_ms, UA_UInt64 *callbackId) {
     return UA_Timer_addRepeatedCallback(&client->timer, (UA_ApplicationCallback)callback,
-                                        client, data, interval_ms, callbackId);
+                                        client, data, interval_ms, 0, callbackId);
 }
 
 UA_StatusCode

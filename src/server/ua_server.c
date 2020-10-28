@@ -414,7 +414,7 @@ addRepeatedCallback(UA_Server *server, UA_ServerCallback callback,
                               UA_UInt64 *callbackId) {
     return UA_Timer_addRepeatedCallback(&server->timer,
                                         (UA_ApplicationCallback)callback,
-                                         server, data, interval_ms, callbackId);
+                                         server, data, interval_ms, 0, callbackId);
 }
 
 UA_StatusCode

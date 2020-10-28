@@ -38,7 +38,7 @@ UA_PubSubConfigurationVersionTimeDifference(void);
 /***********************************/
 UA_StatusCode
 UA_PubSubManager_addRepeatedCallback(UA_Server *server, UA_ServerCallback callback,
-                                     void *data, UA_Double interval_ms, UA_UInt64 *callbackId);
+                                     void *data, UA_Double interval_ms, UA_DateTime baseTime, UA_UInt64 *callbackId);
 UA_StatusCode
 UA_PubSubManager_changeRepeatedCallbackInterval(UA_Server *server, UA_UInt64 callbackId,
                                                 UA_Double interval_ms);

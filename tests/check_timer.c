@@ -29,7 +29,7 @@ createEvents(UA_Timer *t, UA_UInt32 events) {
     for(size_t i = 0; i < events; i++) {
         UA_Double interval = (UA_Double)i+1;
         UA_StatusCode retval =
-            UA_Timer_addRepeatedCallback(t, timerCallback, NULL, NULL, interval, NULL);
+            UA_Timer_addRepeatedCallback(t, timerCallback, NULL, NULL, interval, 0, NULL);
         ck_assert_int_eq(retval, UA_STATUSCODE_GOOD);
     }
 }

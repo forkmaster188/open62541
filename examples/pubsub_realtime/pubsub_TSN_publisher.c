@@ -66,7 +66,7 @@ UA_DataSetReaderConfig readerConfig;
 #define             SUBSCRIBER
 //#define             UPDATE_MEASUREMENTS
 /* Cycle time in milliseconds */
-#define             CYCLE_TIME                            0.25
+#define             CYCLE_TIME                            1000//0.25
 /* Qbv offset */
 #define             QBV_OFFSET                            125 * 1000
 #define             SOCKET_PRIORITY                       3
@@ -235,7 +235,7 @@ static void nanoSecondFieldConversion(struct timespec *timeSpecValue) {
 static UA_StatusCode
 addPubSubApplicationCallback(UA_Server *server, UA_NodeId identifier,
                              UA_ServerCallback callback,
-                             void *data, UA_Double interval_ms, UA_UInt64 *callbackId) {
+                             void *data, UA_Double interval_ms, UA_DateTime callbackTime, UA_UInt64 *callbackId) {
     /* Initialize arguments required for the thread to run */
     threadArg *threadArguments = (threadArg *) UA_malloc(sizeof(threadArg));
 
@@ -683,6 +683,7 @@ addWriterGroup(UA_Server *server) {
     writerGroupConfig.pubsubManagerCallback.addCustomCallback = addPubSubApplicationCallback;
     writerGroupConfig.pubsubManagerCallback.changeCustomCallbackInterval = changePubSubApplicationCallbackInterval;
     writerGroupConfig.pubsubManagerCallback.removeCustomCallback = removePubSubApplicationCallback;
+    writerGroupConfig.baseTime = UA_DateTime_now() + (5 * UA_DATETIME_SEC); // Epoch time
 
     writerGroupConfig.messageSettings.encoding             = UA_EXTENSIONOBJECT_DECODED;
     writerGroupConfig.messageSettings.content.decoded.type = &UA_TYPES[UA_TYPES_UADPWRITERGROUPMESSAGEDATATYPE];

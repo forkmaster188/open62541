@@ -103,7 +103,7 @@ UA_Timer_addTimedCallback(UA_Timer *t, UA_ApplicationCallback callback,
 UA_StatusCode
 UA_Timer_addRepeatedCallback(UA_Timer *t, UA_ApplicationCallback callback,
                              void *application, void *data, UA_Double interval_ms,
-                             UA_UInt64 *callbackId) {
+                             UA_DateTime baseTime, UA_UInt64 *callbackId) {
     /* The interval needs to be positive */
     if(interval_ms <= 0.0)
         return UA_STATUSCODE_BADINTERNALERROR;
@@ -112,7 +112,13 @@ UA_Timer_addRepeatedCallback(UA_Timer *t, UA_ApplicationCallback callback,
     if(interval == 0)
         return UA_STATUSCODE_BADINTERNALERROR;
 
-    UA_DateTime nextTime = UA_DateTime_nowMonotonic() + (UA_DateTime)interval;
+    UA_DateTime currentTime = UA_DateTime_nowMonotonic();
+    UA_DateTime nextTime;
+    if((baseTime > 0.0) && (baseTime > (currentTime + UA_DATETIME_SEC))) /* TODO: Calculation of nextTime with respect to baseTime when callback re-set */
+         nextTime = baseTime;
+    else
+         nextTime = currentTime + (UA_DateTime)interval;
+
     UA_LOCK(t->timerMutex);
     UA_StatusCode res = addCallback(t, callback, application, data, nextTime,
                                     interval, callbackId);
@@ -139,6 +145,7 @@ UA_Timer_changeRepeatedCallbackInterval(UA_Timer *t, UA_UInt64 callbackId,
     /* Set the repeated callback */
     ZIP_REMOVE(UA_TimerZip, &t->root, te);
     te->interval = (UA_UInt64)(interval_ms * UA_DATETIME_MSEC); /* in 100ns resolution */
+    /* TODO: Calculation of nextTime with respect to baseTime when interval modified */
     te->nextTime = UA_DateTime_nowMonotonic() + (UA_DateTime)te->interval;
     ZIP_INSERT(UA_TimerZip, &t->root, te, ZIP_RANK(te, zipfields));
 

@@ -400,7 +400,7 @@ UA_Server_removeDataSetField(UA_Server *server, const UA_NodeId dsf);
 typedef struct {
     UA_StatusCode (*addCustomCallback)(UA_Server *server, UA_NodeId identifier,
                                        UA_ServerCallback callback,
-                                       void *data, UA_Double interval_ms, UA_UInt64 *callbackId);
+                                       void *data, UA_Double interval_ms, UA_DateTime baseTime, UA_UInt64 *callbackId);
 
     UA_StatusCode (*changeCustomCallbackInterval)(UA_Server *server, UA_NodeId identifier,
                                                   UA_UInt64 callbackId, UA_Double interval_ms);
@@ -473,6 +473,7 @@ typedef struct {
     size_t groupPropertiesSize;
     UA_KeyValuePair *groupProperties;
     UA_PubSubEncodingType encodingMimeType;
+    UA_DateTime baseTime;
     /* PubSub Manager Callback */
     UA_PubSub_CallbackLifecycle pubsubManagerCallback;
     /* non std. config parameter. maximum count of embedded DataSetMessage in
@@ -701,6 +702,7 @@ typedef struct {
     UA_Duration subscribingInterval; // Callback interval for subscriber: set the least publishingInterval value of all DSRs in this RG
     UA_Boolean enableBlockingSocket; // To enable or disable blocking socket option
     UA_UInt32 timeout; // Timeout for receive to wait for the packets
+    UA_DateTime baseTime;
     UA_PubSubRTLevel rtLevel;
 } UA_ReaderGroupConfig;
 
