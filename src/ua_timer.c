@@ -115,9 +115,9 @@ UA_Timer_addRepeatedCallback(UA_Timer *t, UA_ApplicationCallback callback,
     UA_DateTime currentTime = UA_DateTime_nowMonotonic();
     UA_DateTime nextTime;
     if((baseTime > 0.0) && (baseTime > (currentTime + UA_DATETIME_SEC))) /* TODO: Calculation of nextTime with respect to baseTime when callback re-set */
-         nextTime = baseTime;
+        nextTime = baseTime;
     else
-         nextTime = currentTime + (UA_DateTime)interval;
+        nextTime = currentTime + (UA_DateTime)interval;
 
     UA_LOCK(t->timerMutex);
     UA_StatusCode res = addCallback(t, callback, application, data, nextTime,

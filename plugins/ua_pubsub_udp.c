@@ -424,7 +424,8 @@ UA_PubSubChannelUDPMC_unregist(UA_PubSubChannel *channel, UA_ExtensionObject *tr
  * @return UA_STATUSCODE_GOOD if success
  */
 static UA_StatusCode
-UA_PubSubChannelUDPMC_send(UA_PubSubChannel *channel, UA_ExtensionObject *transportSettings,
+UA_PubSubChannelUDPMC_send(UA_PubSubChannel *channel,
+                           UA_ExtensionObject *transportSettings,
                            const UA_ByteString *buf) {
     UA_PubSubChannelDataUDPMC *channelConfigUDPMC = (UA_PubSubChannelDataUDPMC *) channel->handle;
     if(!(channel->state == UA_PUBSUB_CHANNEL_PUB || channel->state == UA_PUBSUB_CHANNEL_PUB_SUB)){
@@ -433,6 +434,7 @@ UA_PubSubChannelUDPMC_send(UA_PubSubChannel *channel, UA_ExtensionObject *transp
         return UA_STATUSCODE_BADINTERNALERROR;
     }
     //TODO evalute: chunk messages or check against MTU?
+    //TODO: Handle the publish at the publish time
     long nWritten = 0;
     while (nWritten < (long)buf->length) {
         long n = (long)UA_sendto(channel->sockfd, buf->data, buf->length, 0,

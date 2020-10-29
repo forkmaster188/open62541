@@ -540,6 +540,7 @@ addPubSubConnection(UA_Server *server, UA_NetworkAddressUrlDataType *networkAddr
     connectionConfig.connectionPropertiesSize = 2;
 
     UA_Server_addPubSubConnection(server, &connectionConfig, &connectionIdent);
+    UA_PubSubConnection_regist(server, &connectionIdent);
 }
 
 /**
@@ -680,11 +681,10 @@ addWriterGroup(UA_Server *server) {
 #if defined PUBSUB_CONFIG_RT_INFORMATION_MODEL
     writerGroupConfig.rtLevel            = UA_PUBSUB_RT_FIXED_SIZE;
 #endif
-    writerGroupConfig.pubsubManagerCallback.addCustomCallback = addPubSubApplicationCallback;
-    writerGroupConfig.pubsubManagerCallback.changeCustomCallbackInterval = changePubSubApplicationCallbackInterval;
-    writerGroupConfig.pubsubManagerCallback.removeCustomCallback = removePubSubApplicationCallback;
-    writerGroupConfig.baseTime = UA_DateTime_now() + (5 * UA_DATETIME_SEC); // Epoch time
-
+    // writerGroupConfig.pubsubManagerCallback.addCustomCallback = addPubSubApplicationCallback;
+    // writerGroupConfig.pubsubManagerCallback.changeCustomCallbackInterval = changePubSubApplicationCallbackInterval;
+    // writerGroupConfig.pubsubManagerCallback.removeCustomCallback = removePubSubApplicationCallback;
+    writerGroupConfig.baseTime = UA_DateTime_nowMonotonic() + (5 * UA_DATETIME_SEC); // Epoch time - Internal usage is monotonic
     writerGroupConfig.messageSettings.encoding             = UA_EXTENSIONOBJECT_DECODED;
     writerGroupConfig.messageSettings.content.decoded.type = &UA_TYPES[UA_TYPES_UADPWRITERGROUPMESSAGEDATATYPE];
     /* The configuration flags for the messages are encapsulated inside the
@@ -699,6 +699,10 @@ addWriterGroup(UA_Server *server) {
                                                               (UA_UadpNetworkMessageContentMask)UA_UADPNETWORKMESSAGECONTENTMASK_GROUPHEADER |
                                                               (UA_UadpNetworkMessageContentMask)UA_UADPNETWORKMESSAGECONTENTMASK_WRITERGROUPID |
                                                               (UA_UadpNetworkMessageContentMask)UA_UADPNETWORKMESSAGECONTENTMASK_PAYLOADHEADER);
+    /* Set publishingOffset to publish at the particular offset of the cycle */
+    writerGroupMessage->publishingOffset = (UA_Double *) UA_calloc(1, sizeof(UA_Double));
+    writerGroupMessage->publishingOffsetSize = 1;
+    *writerGroupMessage->publishingOffset = 50; // Send packets at 50ms
     writerGroupConfig.messageSettings.content.decoded.data = writerGroupMessage;
     UA_Server_addWriterGroup(server, connectionIdent, &writerGroupConfig, &writerGroupIdent);
     UA_Server_setWriterGroupOperational(server, writerGroupIdent);

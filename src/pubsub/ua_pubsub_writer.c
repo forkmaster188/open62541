@@ -17,6 +17,8 @@
 #include "ua_pubsub.h"
 #include "ua_pubsub_networkmessage.h"
 
+#include <open62541/plugin/pubsub_internal.h>
+
 #ifdef UA_ENABLE_PUBSUB_INFORMATIONMODEL
 #include "ua_pubsub_ns0.h"
 #endif
@@ -202,7 +204,7 @@ UA_Server_addWriterGroup(UA_Server *server, const UA_NodeId connection,
         tmpWriterGroupConfig.messageSettings.encoding = UA_EXTENSIONOBJECT_DECODED;
     }
     newWriterGroup->config = tmpWriterGroupConfig;
-    if((newWriterGroup->config.baseTime > 0.0) && (newWriterGroup->config.baseTime > UA_DateTime_now())) {
+    if((newWriterGroup->config.baseTime > 0.0) && (newWriterGroup->config.baseTime > UA_DateTime_nowMonotonic())) {
         newWriterGroup->callbackTime = newWriterGroup->config.baseTime;
     } else {
         if(newWriterGroup->config.baseTime > 0.0) {
@@ -2064,7 +2066,6 @@ cleanup:
 void
 UA_WriterGroup_publishCallback(UA_Server *server, UA_WriterGroup *writerGroup) {
     UA_LOG_DEBUG(&server->config.logger, UA_LOGCATEGORY_SERVER, "Publish Callback");
-
     if(!writerGroup) {
         UA_LOG_ERROR(&server->config.logger, UA_LOGCATEGORY_SERVER,
                        "Publish failed. WriterGroup not found");
@@ -2093,13 +2094,9 @@ UA_WriterGroup_publishCallback(UA_Server *server, UA_WriterGroup *writerGroup) {
         return;
     }
 
-    if(writerGroup->config.encodingMimeType == UA_PUBSUB_ENCODING_UADP){
-        UA_UadpWriterGroupMessageDataType *wgm = (UA_UadpWriterGroupMessageDataType *) writerGroup->config.messageSettings.content.decoded.data;
-        /* Check the current time with the first value of publishingOffset array */
-        if((writerGroup->callbackTime + (UA_DateTime)((*wgm->publishingOffset) * UA_DATETIME_MSEC)) < UA_DateTime_now())
-            UA_LOG_WARNING(&server->config.logger, UA_LOGCATEGORY_SERVER,
-                           "Delayed publish. Publish may fail, modify cycletime and PublishingOffset configuration. Use custom callback implementation for better accuracy");
-    }
+    /* TODO: Handle server timer delay of 1ms with the callback time */
+    if(writerGroup->callbackTime <= 0)
+       writerGroup->callbackTime = UA_DateTime_nowMonotonic(); // When no base time configured, take the first callback time as the base time
 
     if(writerGroup->config.rtLevel == UA_PUBSUB_RT_FIXED_SIZE) {
         UA_UadpWriterGroupMessageDataType *wgm = (UA_UadpWriterGroupMessageDataType *) writerGroup->config.messageSettings.content.decoded.data;
@@ -2108,7 +2105,8 @@ UA_WriterGroup_publishCallback(UA_Server *server, UA_WriterGroup *writerGroup) {
                            "PublishingOffset array not supported in RT pubsub path. Initial publishingOffset value taken");
 
         UA_DateTime publishingTime = writerGroup->callbackTime + (UA_DateTime)((*wgm->publishingOffset) * UA_DATETIME_MSEC);
-        printf("pub %ld", publishingTime);
+        UA_PubSubTimedSend *pubsubTimedSend = (UA_PubSubTimedSend *)connection->channel->pubsubTimedSend;
+        pubsubTimedSend->publishingTime = publishingTime;
         UA_StatusCode res =
             sendBufferedNetworkMessage(server, connection, &writerGroup->bufferedMessage,
                                        &writerGroup->config.transportSettings);
@@ -2168,7 +2166,8 @@ UA_WriterGroup_publishCallback(UA_Server *server, UA_WriterGroup *writerGroup) {
                 if(writerGroup->config.encodingMimeType == UA_PUBSUB_ENCODING_UADP){
                     UA_UadpWriterGroupMessageDataType *wgm = (UA_UadpWriterGroupMessageDataType *) writerGroup->config.messageSettings.content.decoded.data;
                     UA_DateTime publishingTime = writerGroup->callbackTime  + (UA_DateTime)(wgm->publishingOffset[dsmCount] * UA_DATETIME_MSEC);
-                            printf("pub %ld", publishingTime);
+                    UA_PubSubTimedSend *pubsubTimedSend = (UA_PubSubTimedSend *)connection->channel->pubsubTimedSend;
+                    pubsubTimedSend->publishingTime = publishingTime;
                     res = sendNetworkMessage(connection, writerGroup, &dsmStore[dsmCount],
                                             &dsw->config.dataSetWriterId, 1,
                                             &writerGroup->config.messageSettings,
@@ -2211,7 +2210,8 @@ UA_WriterGroup_publishCallback(UA_Server *server, UA_WriterGroup *writerGroup) {
             UA_UadpWriterGroupMessageDataType *wgm = (UA_UadpWriterGroupMessageDataType *) writerGroup->config.messageSettings.content.decoded.data;
             /* TODO: PublishingOffset calculation of publish time */
             UA_DateTime publishingTime = writerGroup->callbackTime  + (UA_DateTime)(wgm->publishingOffset[i * maxDSM] * UA_DATETIME_MSEC);
-                    printf("pub %ld", publishingTime);
+            UA_PubSubTimedSend *pubsubTimedSend = (UA_PubSubTimedSend *)connection->channel->pubsubTimedSend;
+            pubsubTimedSend->publishingTime = publishingTime;
             res3 = sendNetworkMessage(connection, writerGroup, &dsmStore[i * maxDSM],
                                       &dsWriterIds[i * maxDSM], nmDsmCount,
                                       &writerGroup->config.messageSettings,

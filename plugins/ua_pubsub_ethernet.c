@@ -13,6 +13,10 @@
 #include <open62541/plugin/log_stdout.h>
 #include <open62541/plugin/pubsub_ethernet.h>
 
+#include <open62541/plugin/pubsub_internal.h>
+
+#include "open62541_queue.h"
+
 #if defined(__vxworks) || defined(__VXWORKS__)
 #include <netpacket/packet.h>
 #include <netinet/if_ether.h>
@@ -23,6 +27,9 @@
 #include <linux/version.h>
 #endif
 #include "time.h"
+
+void
+timedEthernetPublish(UA_PubSubChannel *channel, UA_PublishEntry *publishPacket);
 
 /* Ethernet network layer specific internal data */
 typedef struct {
@@ -345,6 +352,10 @@ UA_PubSubChannelEthernet_regist(UA_PubSubChannel *channel,
     UA_PubSubChannelDataEthernet *channelDataEthernet =
         (UA_PubSubChannelDataEthernet *) channel->handle;
 
+    UA_PubSubTimedSend *pubsubTimedSend = (UA_PubSubTimedSend *)channel->pubsubTimedSend;
+    LIST_INIT(&pubsubTimedSend->sendBuffers);
+    pubsubTimedSend->timedSend = timedEthernetPublish;
+
     if(!is_multicast_address(channelDataEthernet->targetAddress))
         return UA_STATUSCODE_GOOD;
 
@@ -455,6 +466,28 @@ sendWithTxTime(UA_PubSubChannel *channel, UA_ExtensionObject *transportSettings,
 #endif
 
 /**
+ * Publish at the exact time interval using timed callbacks
+ */
+void timedEthernetPublish(UA_PubSubChannel *channel, UA_PublishEntry *publishPacket) {
+    // printf("TimedEthernet publish %ld\n", UA_DateTime_nowMonotonic());
+    ssize_t rc;
+    rc = UA_send(channel->sockfd, (char *)publishPacket->buffer.data, publishPacket->buffer.length, 0);
+    if(rc  < 0) {
+        UA_LOG_ERROR(UA_Log_Stdout, UA_LOGCATEGORY_SERVER,
+                     "PubSub connection send failed. Send message failed.");
+        UA_ByteString_clear(&publishPacket->buffer);
+        LIST_REMOVE(publishPacket, listEntry);
+        UA_free(publishPacket);
+        return;
+    }
+
+    UA_ByteString_clear(&publishPacket->buffer);
+    LIST_REMOVE(publishPacket, listEntry);
+    UA_free(publishPacket);
+    return;
+}
+
+/**
  * Send messages to the connection defined address
  *
  * @return UA_STATUSCODE_GOOD if success
@@ -526,21 +559,40 @@ UA_PubSubChannelEthernet_send(UA_PubSubChannel *channel,
             UA_free(bufSend);
             return UA_STATUSCODE_BADINTERNALERROR;
         }
-    }
-    else
+
+        UA_free(bufSend);
+     }
+     else
 #endif
-    {
-        ssize_t rc;
-        rc = UA_send(channel->sockfd, bufSend, lenBuf, 0);
-        if(rc  < 0) {
-            UA_LOG_ERROR(UA_Log_Stdout, UA_LOGCATEGORY_SERVER,
-                         "PubSub connection send failed. Send message failed.");
-            UA_free(bufSend);
-            return UA_STATUSCODE_BADINTERNALERROR;
+     {
+        UA_PubSubTimedSend *pubsubTimedSend = (UA_PubSubTimedSend *)channel->pubsubTimedSend;
+        UA_DateTime currentTime = UA_DateTime_nowMonotonic();
+        if((currentTime + UA_DATETIME_MSEC) > pubsubTimedSend->publishingTime) {
+            /* Send out the packets if the publish time is less than 1ms ahead of the current time - Internal timers will not support this */
+            ssize_t rc;
+            rc = UA_send(channel->sockfd, bufSend, lenBuf, 0);
+            if(rc  < 0) {
+                UA_LOG_ERROR(UA_Log_Stdout, UA_LOGCATEGORY_SERVER,
+                             "PubSub connection send failed. Send message failed.");
+                UA_free(bufSend);
+                return UA_STATUSCODE_BADINTERNALERROR;
+            }
+
+        UA_free(bufSend);
+        }
+        else {
+            UA_UInt64 callbackId;
+            UA_PublishEntry *publishPacket = (UA_PublishEntry *) UA_calloc(1, sizeof(UA_PublishEntry));
+            publishPacket->buffer.data = (UA_Byte *)bufSend;
+            publishPacket->buffer.length = lenBuf;
+            LIST_INSERT_HEAD(&pubsubTimedSend->sendBuffers, publishPacket, listEntry);
+            // printf("publish time at send %ld\n", UA_DateTime_nowMonotonic());
+            UA_Timer_addTimedCallback(pubsubTimedSend->timer, (UA_ApplicationCallback)pubsubTimedSend->timedSend, channel,
+                                      publishPacket, pubsubTimedSend->publishingTime,
+                                      &callbackId);
         }
     }
 
-    UA_free(bufSend);
     return UA_STATUSCODE_GOOD;
 }
 
@@ -584,6 +636,7 @@ UA_PubSubChannelEthernet_receive(UA_PubSubChannel *channel, UA_ByteString *messa
             return UA_STATUSCODE_BADINTERNALERROR;
         }
     }
+
     clock_gettime(CLOCK_TAI, &currentTime);
     currentTimeValue = (UA_UInt64)((currentTime.tv_sec * 1000000000) + currentTime.tv_nsec);
     maxTime.tv_sec   = currentTime.tv_sec + tmptv.tv_sec;

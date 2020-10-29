@@ -9,6 +9,8 @@
 #include "server/ua_server_internal.h"
 #include "ua_pubsub_ns0.h"
 
+#include <open62541/plugin/pubsub_internal.h>
+
 #ifdef UA_ENABLE_PUBSUB /* conditional compilation */
 
 #ifdef UA_ENABLE_PUBSUB_MONITORING
@@ -62,6 +64,7 @@ UA_Server_addPubSubConnection(UA_Server *server,
                      "PubSub Connection creation failed. Out of Memory.");
         return UA_STATUSCODE_BADOUTOFMEMORY;
     }
+
     newConnectionsField->componentType = UA_PUBSUB_COMPONENT_CONNECTION;
     if (server->pubSubManager.connectionsSize != 0)
         TAILQ_INSERT_TAIL(&server->pubSubManager.connections, newConnectionsField, listEntry);
@@ -86,6 +89,21 @@ UA_Server_addPubSubConnection(UA_Server *server,
                      "PubSub Connection creation failed. Transport layer creation problem.");
         return UA_STATUSCODE_BADINTERNALERROR;
     }
+
+    /* Set the server timer to pubsub connection channel for timed publish */
+    UA_PubSubTimedSend *pubsubTimedSend = (UA_PubSubTimedSend *) UA_calloc(1, sizeof(UA_PubSubTimedSend));
+    if(!pubsubTimedSend){
+        UA_PubSubConnection_clear(server, newConnectionsField);
+        TAILQ_REMOVE(&server->pubSubManager.connections, newConnectionsField, listEntry);
+        server->pubSubManager.connectionsSize--;
+        UA_free(newConnectionsField);
+        UA_LOG_ERROR(&server->config.logger, UA_LOGCATEGORY_SERVER,
+                     "PubSub Connection creation failed. Bad out of memory");
+        return UA_STATUSCODE_BADOUTOFMEMORY;
+    }
+
+    pubsubTimedSend->timer = &server->timer;
+    newConnectionsField->channel->pubsubTimedSend = pubsubTimedSend;
 
     UA_PubSubManager_generateUniqueNodeId(server, &newConnectionsField->identifier);
 
