@@ -17,7 +17,7 @@
 #include "ua_pubsub.h"
 #include "ua_pubsub_networkmessage.h"
 
-#include <open62541/plugin/pubsub_internal.h>
+#include <open62541/pubsub_internal.h>
 
 #ifdef UA_ENABLE_PUBSUB_INFORMATIONMODEL
 #include "ua_pubsub_ns0.h"

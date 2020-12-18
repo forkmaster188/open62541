@@ -66,7 +66,7 @@ UA_DataSetReaderConfig readerConfig;
 #define             SUBSCRIBER
 //#define             UPDATE_MEASUREMENTS
 /* Cycle time in milliseconds */
-#define             CYCLE_TIME                            1000//0.25
+#define             CYCLE_TIME                            0.25
 /* Qbv offset */
 #define             QBV_OFFSET                            125 * 1000
 #define             SOCKET_PRIORITY                       3
@@ -115,7 +115,7 @@ UA_DataSetReaderConfig readerConfig;
 #ifndef CLOCK_TAI
 #define             CLOCK_TAI                             11
 #endif
-#define             CLOCKID                               CLOCK_TAI
+#define             CLOCKID                               CLOCK_MONOTONIC
 #define             ETH_TRANSPORT_PROFILE                 "http://opcfoundation.org/UA-Profile/Transport/pubsub-eth-uadp"
 
 /* If the Hardcoded publisher/subscriber MAC addresses need to be changed,
@@ -158,6 +158,7 @@ struct timespec     publishTimestamp[MAX_MEASUREMENTS];
 /* Thread for publisher */
 pthread_t           pubthreadID;
 struct timespec     dataModificationTime;
+struct timespec     publishBaseTime;
 #endif
 
 #if defined(SUBSCRIBER)
@@ -681,10 +682,13 @@ addWriterGroup(UA_Server *server) {
 #if defined PUBSUB_CONFIG_RT_INFORMATION_MODEL
     writerGroupConfig.rtLevel            = UA_PUBSUB_RT_FIXED_SIZE;
 #endif
-    // writerGroupConfig.pubsubManagerCallback.addCustomCallback = addPubSubApplicationCallback;
-    // writerGroupConfig.pubsubManagerCallback.changeCustomCallbackInterval = changePubSubApplicationCallbackInterval;
-    // writerGroupConfig.pubsubManagerCallback.removeCustomCallback = removePubSubApplicationCallback;
-    writerGroupConfig.baseTime = UA_DateTime_nowMonotonic() + (5 * UA_DATETIME_SEC); // Epoch time - Internal usage is monotonic
+    writerGroupConfig.pubsubManagerCallback.addCustomCallback = addPubSubApplicationCallback;
+    writerGroupConfig.pubsubManagerCallback.changeCustomCallbackInterval = changePubSubApplicationCallbackInterval;
+    writerGroupConfig.pubsubManagerCallback.removeCustomCallback = removePubSubApplicationCallback;
+    clock_gettime(CLOCKID, &publishBaseTime);
+    publishBaseTime.tv_sec  += SECONDS_SLEEP;
+    publishBaseTime.tv_nsec = NANO_SECONDS_SLEEP_PUB;
+    writerGroupConfig.baseTime = ((UA_DateTime)(publishBaseTime.tv_sec * SECONDS) + (UA_DateTime)publishBaseTime.tv_nsec) / 100; // Epoch time - Internal usage is monotonic
     writerGroupConfig.messageSettings.encoding             = UA_EXTENSIONOBJECT_DECODED;
     writerGroupConfig.messageSettings.content.decoded.type = &UA_TYPES[UA_TYPES_UADPWRITERGROUPMESSAGEDATATYPE];
     /* The configuration flags for the messages are encapsulated inside the
@@ -702,7 +706,7 @@ addWriterGroup(UA_Server *server) {
     /* Set publishingOffset to publish at the particular offset of the cycle */
     writerGroupMessage->publishingOffset = (UA_Double *) UA_calloc(1, sizeof(UA_Double));
     writerGroupMessage->publishingOffsetSize = 1;
-    *writerGroupMessage->publishingOffset = 50; // Send packets at 50ms
+    *writerGroupMessage->publishingOffset = 0.125; // Send packets at 125us of puboffset
     writerGroupConfig.messageSettings.content.decoded.data = writerGroupMessage;
     UA_Server_addWriterGroup(server, connectionIdent, &writerGroupConfig, &writerGroupIdent);
     UA_Server_setWriterGroupOperational(server, writerGroupIdent);
@@ -776,15 +780,10 @@ updateMeasurementsSubscriber(struct timespec receive_time, UA_UInt64 counterValu
  * This routine publishes the data at a cycle time of 250us.
  */
 void *publisherETF(void *arg) {
-    struct timespec   nextnanosleeptime;
     UA_ServerCallback pubCallback;
     UA_Server*        server;
     UA_WriterGroup*   currentWriterGroup; // TODO: Remove WriterGroup Usage
     UA_UInt64         interval_ns;
-    UA_UInt64         transmission_time;
-
-    /* Initialise value for nextnanosleeptime timespec */
-    nextnanosleeptime.tv_nsec                      = 0;
 
     threadArg *threadArgumentsPublisher = (threadArg *)arg;
     server                              = threadArgumentsPublisher->server;
@@ -792,34 +791,11 @@ void *publisherETF(void *arg) {
     currentWriterGroup                  = (UA_WriterGroup *)threadArgumentsPublisher->data;
     interval_ns                         = (UA_UInt64)(threadArgumentsPublisher->interval_ms * MILLI_SECONDS);
 
-    /* Get current time and compute the next nanosleeptime */
-    clock_gettime(CLOCKID, &nextnanosleeptime);
-    /* Variable to nano Sleep until 1ms before a 1 second boundary */
-    nextnanosleeptime.tv_sec                      += SECONDS_SLEEP;
-    nextnanosleeptime.tv_nsec                      = NANO_SECONDS_SLEEP_PUB;
-    nanoSecondFieldConversion(&nextnanosleeptime);
-
-    /* Define Ethernet ETF transport settings */
-    UA_EthernetWriterGroupTransportDataType ethernettransportSettings;
-    memset(&ethernettransportSettings, 0, sizeof(UA_EthernetWriterGroupTransportDataType));
-    /* TODO: Txtime enable shall be configured based on connectionConfig.etfConfiguration.sotxtimeEnabled parameter */
-    ethernettransportSettings.transmission_time = 0;
-
-    /* Encapsulate ETF config in transportSettings */
-    UA_ExtensionObject transportSettings;
-    memset(&transportSettings, 0, sizeof(UA_ExtensionObject));
-    /* TODO: transportSettings encoding and type to be defined */
-    transportSettings.content.decoded.data       = &ethernettransportSettings;
-    currentWriterGroup->config.transportSettings = transportSettings;
-    UA_UInt64 roundOffCycleTime                  = (CYCLE_TIME * MILLI_SECONDS) - NANO_SECONDS_SLEEP_PUB;
-
     while (running) {
-        clock_nanosleep(CLOCKID, TIMER_ABSTIME, &nextnanosleeptime, NULL);
-        transmission_time                              = ((UA_UInt64)nextnanosleeptime.tv_sec * SECONDS + (UA_UInt64)nextnanosleeptime.tv_nsec) + roundOffCycleTime + QBV_OFFSET;
-        ethernettransportSettings.transmission_time = transmission_time;
+        clock_nanosleep(CLOCKID, TIMER_ABSTIME, &publishBaseTime, NULL);
         pubCallback(server, currentWriterGroup);
-        nextnanosleeptime.tv_nsec                     += (__syscall_slong_t)interval_ns;
-        nanoSecondFieldConversion(&nextnanosleeptime);
+        publishBaseTime.tv_nsec += (__syscall_slong_t)interval_ns;
+        nanoSecondFieldConversion(&publishBaseTime);
     }
 
     UA_free(threadArgumentsPublisher);
