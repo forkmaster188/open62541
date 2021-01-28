@@ -1024,6 +1024,27 @@ addDataSetWriterRepresentation(UA_Server *server, UA_DataSetWriter *dataSetWrite
                                      UA_NODEID_NUMERIC(0, UA_NS0ID_DATASETTOWRITER),
                                      UA_EXPANDEDNODEID_NUMERIC(0, dataSetWriter->identifier.identifier.numeric), true);
 
+    UA_NodeId dataSetWriterIdNode =
+        findSingleChildNode(server, UA_QUALIFIEDNAME(0, "DataSetWriterId"),
+                            UA_NODEID_NUMERIC(0, UA_NS0ID_HASPROPERTY),
+                            UA_NODEID_NUMERIC(0, dataSetWriter->identifier.identifier.numeric));
+    UA_NodeId keyFrameNode =
+        findSingleChildNode(server, UA_QUALIFIEDNAME(0, "KeyFrameCount"),
+                            UA_NODEID_NUMERIC(0, UA_NS0ID_HASPROPERTY),
+                            UA_NODEID_NUMERIC(0, dataSetWriter->identifier.identifier.numeric));
+    UA_NodeId dataSetFieldContentMaskNode =
+        findSingleChildNode(server, UA_QUALIFIEDNAME(0, "DataSetFieldContentMask"),
+                            UA_NODEID_NUMERIC(0, UA_NS0ID_HASPROPERTY),
+                            UA_NODEID_NUMERIC(0, dataSetWriter->identifier.identifier.numeric));
+
+    UA_Variant value;
+    UA_Variant_init(&value);
+    UA_Variant_setScalar(&value, &dataSetWriter->config.dataSetWriterId, &UA_TYPES[UA_TYPES_UINT16]);
+    UA_Server_writeValue(server, dataSetWriterIdNode, value);
+    UA_Variant_setScalar(&value, &dataSetWriter->config.keyFrameCount, &UA_TYPES[UA_TYPES_UINT32]);
+    UA_Server_writeValue(server, keyFrameNode, value);
+    UA_Variant_setScalar(&value, &dataSetWriter->config.dataSetFieldContentMask, &UA_TYPES[UA_TYPES_DATASETFIELDCONTENTMASK]);
+    UA_Server_writeValue(server, dataSetFieldContentMaskNode, value);
 
     retVal |= addPubSubObjectNode(server, "MessageSettings", 0,
                                   dataSetWriter->identifier.identifier.numeric,
